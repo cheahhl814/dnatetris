@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DNA Mapping Tetris</title>
+  <style>
+    canvas {
+      background: #f0f0f0;
+      display: block;
+      margin: 0 auto;
+      border: 2px solid #444;
+    }
+    body {
+      text-align: center;
+      font-family: Arial, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <h1>DNA Mapping Tetris</h1>
+  <p>Use ← → ↓ keys to move and speed up. Match reference. Reach 5X to clear.</p>
+  <canvas id="gameCanvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const COLS = 30;
+    const ROWS = 25;
+    const CELL_SIZE = 24;
+    const REQUIRED_COVERAGE = 5;
+    const BASES = ['A', 'T', 'G', 'C'];
+    const BASE_COLORS = { 'A': 'red', 'T': 'blue', 'G': 'green', 'C': 'orange' };
+
+    canvas.width = COLS * CELL_SIZE;
+    canvas.height = ROWS * CELL_SIZE;
+
+    let reference = Array.from({ length: COLS }, () => BASES[Math.floor(Math.random() * 4)]);
+
+    let grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+
+    function generateRead() {
+      const length = Math.floor(Math.random() * 2) + 4; // 4-5
+      const start = Math.floor(Math.random() * (COLS - length + 1));
+      const sequence = reference.slice(start, start + length);
+      return {
+        x: Math.floor(COLS / 2 - length / 2),
+        y: 0,
+        refStart: start,
+        sequence: sequence
+      };
+    }
+
+    let currentRead = generateRead();
+
+    function drawGrid() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const cell = grid[y][x];
+          if (cell) {
+            ctx.fillStyle = BASE_COLORS[cell.base];
+            ctx.globalAlpha = Math.min(1, cell.coverage / REQUIRED_COVERAGE);
+            ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = "white";
+            ctx.font = "14px monospace";
+            ctx.fillText(cell.base, x * CELL_SIZE + 6, y * CELL_SIZE + 16);
+          }
+        }
+      }
+
+      ctx.font = "14px monospace";
+      for (let i = 0; i < currentRead.sequence.length; i++) {
+        const x = currentRead.x + i;
+        const y = currentRead.y;
+        const base = currentRead.sequence[i];
+        ctx.fillStyle = BASE_COLORS[base];
+        ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        ctx.fillStyle = "white";
+        ctx.fillText(base, x * CELL_SIZE + 6, y * CELL_SIZE + 16);
+      }
+
+      for (let x = 0; x < COLS; x++) {
+        ctx.fillStyle = BASE_COLORS[reference[x]];
+        ctx.fillRect(x * CELL_SIZE, (ROWS - 1) * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        ctx.fillStyle = "white";
+        ctx.fillText(reference[x], x * CELL_SIZE + 6, (ROWS - 1) * CELL_SIZE + 16);
+      }
+    }
+
+    function canMove(x, y) {
+      if (y >= ROWS - 1) return false;
+      for (let i = 0; i < currentRead.sequence.length; i++) {
+        const gx = x + i;
+        if (gx >= COLS) return false;
+        if (grid[y][gx] && grid[y][gx].base !== currentRead.sequence[i]) return false;
+      }
+      return true;
+    }
+
+    function placeRead() {
+      for (let i = 0; i < currentRead.sequence.length; i++) {
+        const x = currentRead.x + i;
+        const y = currentRead.y;
+        if (y < ROWS - 1 && currentRead.sequence[i] === reference[x]) {
+          if (!grid[y][x]) {
+            grid[y][x] = { base: currentRead.sequence[i], coverage: 1 };
+          } else {
+            grid[y][x].coverage++;
+          }
+        } else if (y < ROWS - 1 && !grid[y][x]) {
+          // Preserve mismatches (do not clear these later)
+          grid[y][x] = { base: currentRead.sequence[i], coverage: 1 };
+        }
+      }
+    }
+
+    function checkAndClearCoverage() {
+      for (let x = 0; x < COLS; x++) {
+        let count = 0;
+        for (let y = 0; y < ROWS - 1; y++) {
+          const cell = grid[y][x];
+          if (cell && cell.base === reference[x] && cell.coverage >= REQUIRED_COVERAGE) {
+            count++;
+          }
+        }
+        if (count >= REQUIRED_COVERAGE) {
+          for (let y = ROWS - 2; y >= 0; y--) {
+            if (grid[y][x] && grid[y][x].base === reference[x] && grid[y][x].coverage >= REQUIRED_COVERAGE) {
+              for (let yy = y; yy > 0; yy--) {
+                grid[yy][x] = grid[yy - 1][x];
+              }
+              grid[0][x] = null;
+            }
+          }
+        }
+      }
+    }
+
+    function moveDown() {
+      if (!canMove(currentRead.x, currentRead.y + 1)) {
+        placeRead();
+        checkAndClearCoverage();
+        currentRead = generateRead();
+        if (!canMove(currentRead.x, currentRead.y)) {
+          alert("Game Over: Sequencing overflow!");
+          clearInterval(gameLoop);
+        }
+      } else {
+        currentRead.y++;
+      }
+      drawGrid();
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft" && currentRead.x > 0 && canMove(currentRead.x - 1, currentRead.y)) {
+        currentRead.x--;
+      } else if (e.key === "ArrowRight" && currentRead.x + currentRead.sequence.length < COLS && canMove(currentRead.x + 1, currentRead.y)) {
+        currentRead.x++;
+      } else if (e.key === "ArrowDown") {
+        moveDown();
+      }
+      drawGrid();
+    });
+
+    let gameLoop = setInterval(moveDown, 600);
+    drawGrid();
+  </script>
+</body>
+</html>
